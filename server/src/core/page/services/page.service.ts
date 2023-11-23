@@ -35,8 +35,25 @@ export class PageService {
     return this.pageRepository.findById(pageId);
   }
 
-  async findWithoutYDoc(pageId: string) {
-    return this.pageRepository.findWithoutYDoc(pageId);
+  async findWithContent(pageId: string) {
+    return this.pageRepository.findWithContent(pageId);
+  }
+
+  async findWithYdoc(pageId: string) {
+    return this.pageRepository.findWithYDoc(pageId);
+  }
+
+  async findWithAllFields(pageId: string) {
+    return this.pageRepository.findWithAllFields(pageId);
+  }
+
+  async findOne(pageId: string): Promise<Page> {
+    const page = await this.findById(pageId);
+    if (!page) {
+      throw new BadRequestException('Page not found');
+    }
+
+    return page;
   }
 
   async create(
@@ -47,6 +64,7 @@ export class PageService {
     const page = plainToInstance(Page, createPageDto);
     page.creatorId = userId;
     page.workspaceId = workspaceId;
+    page.lastUpdatedById = userId;
 
     if (createPageDto.parentPageId) {
       // TODO: make sure parent page belongs to same workspace and user has permissions
@@ -69,19 +87,34 @@ export class PageService {
     return createdPage;
   }
 
-  async update(pageId: string, updatePageDto: UpdatePageDto): Promise<Page> {
-    const result = await this.pageRepository.update(pageId, updatePageDto);
+  async update(
+    pageId: string,
+    updatePageDto: UpdatePageDto,
+    userId: string,
+  ): Promise<Page> {
+    const updateData = {
+      ...updatePageDto,
+      lastUpdatedById: userId,
+    };
+
+    const result = await this.pageRepository.update(pageId, updateData);
     if (result.affected === 0) {
       throw new BadRequestException(`Page not found`);
     }
 
-    return await this.pageRepository.findWithoutYDoc(pageId);
+    return await this.pageRepository.findById(pageId);
   }
 
-  async updateState(pageId: string, content: any, ydoc: any): Promise<void> {
+  async updateState(
+    pageId: string,
+    content: any,
+    ydoc: any,
+    userId?: string, // TODO: fix this
+  ): Promise<void> {
     await this.pageRepository.update(pageId, {
       content: content,
       ydoc: ydoc,
+      ...(userId && { lastUpdatedById: userId }),
     });
   }
 
@@ -187,16 +220,7 @@ export class PageService {
     return await this.pageRepository.findById(pageId);
   }
 
-  async getRecentPages(limit = 10): Promise<Page[]> {
-    return await this.pageRepository.find({
-      order: {
-        createdAt: 'DESC',
-      },
-      take: limit,
-    });
-  }
-
-  async getByWorkspaceId(
+  async getSidebarPagesByWorkspaceId(
     workspaceId: string,
     limit = 200,
   ): Promise<PageWithOrderingDto[]> {
@@ -223,5 +247,21 @@ export class PageService {
       .getRawMany<PageWithOrderingDto[]>();
 
     return transformPageResult(pages);
+  }
+
+  async getRecentWorkspacePages(
+    workspaceId: string,
+    limit = 20,
+    offset = 0,
+  ): Promise<Page[]> {
+    const pages = await this.pageRepository
+      .createQueryBuilder('page')
+      .where('page.workspaceId = :workspaceId', { workspaceId })
+      .select(this.pageRepository.baseFields)
+      .orderBy('page.updatedAt', 'DESC')
+      .offset(offset)
+      .take(limit)
+      .getMany();
+    return pages;
   }
 }

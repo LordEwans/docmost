@@ -4,7 +4,6 @@ import { useClickOutside } from '@mantine/hooks';
 import { useAtom } from 'jotai';
 import {
   activeCommentIdAtom,
-  commentsAtom,
   draftCommentIdAtom,
   showCommentPopupAtom,
 } from '@/features/comment/atoms/comment-atom';
@@ -12,7 +11,8 @@ import { Editor } from '@tiptap/core';
 import CommentEditor from '@/features/comment/components/comment-editor';
 import CommentActions from '@/features/comment/components/comment-actions';
 import { currentUserAtom } from '@/features/user/atoms/current-user-atom';
-import useComment from '@/features/comment/hooks/use-comment';
+import { useCreateCommentMutation } from '@/features/comment/queries/comment-query';
+import { asideStateAtom } from '@/components/navbar/atoms/sidebar-atom';
 
 interface CommentDialogProps {
   editor: Editor,
@@ -21,16 +21,16 @@ interface CommentDialogProps {
 
 function CommentDialog({ editor, pageId }: CommentDialogProps) {
   const [comment, setComment] = useState('');
-  const [, setShowCommentPopup] = useAtom<boolean>(showCommentPopupAtom);
-  const [, setActiveCommentId] = useAtom<string | null>(activeCommentIdAtom);
-  const [draftCommentId, setDraftCommentId] = useAtom<string | null>(draftCommentIdAtom);
-  const [comments, setComments] = useAtom(commentsAtom(pageId));
+  const [, setShowCommentPopup] = useAtom(showCommentPopupAtom);
+  const [, setActiveCommentId] = useAtom(activeCommentIdAtom);
+  const [draftCommentId, setDraftCommentId] = useAtom(draftCommentIdAtom);
   const [currentUser] = useAtom(currentUserAtom);
+  const [, setAsideState] = useAtom(asideStateAtom);
   const useClickOutsideRef = useClickOutside(() => {
     handleDialogClose();
   });
-  const { createCommentMutation } = useComment();
-  const { isLoading } = createCommentMutation;
+  const createCommentMutation = useCreateCommentMutation();
+  const { isPending } = createCommentMutation;
 
   const handleDialogClose = () => {
     setShowCommentPopup(false);
@@ -43,20 +43,20 @@ function CommentDialog({ editor, pageId }: CommentDialogProps) {
   };
 
   const handleAddComment = async () => {
-    const selectedText = getSelectedText();
-    const commentData = {
-      id: draftCommentId,
-      pageId: pageId,
-      content: JSON.stringify(comment),
-      selection: selectedText,
-    };
-
     try {
+      const selectedText = getSelectedText();
+      const commentData = {
+        id: draftCommentId,
+        pageId: pageId,
+        content: JSON.stringify(comment),
+        selection: selectedText,
+      };
+
       const createdComment = await createCommentMutation.mutateAsync(commentData);
-      setComments(prevComments => [...prevComments, createdComment]);
       editor.chain().setComment(createdComment.id).unsetCommentDecoration().run();
       setActiveCommentId(createdComment.id);
 
+      setAsideState({ tab: 'comments', isAsideOpen: true });
       setTimeout(() => {
         const selector = `div[data-comment-id="${createdComment.id}"]`;
         const commentElement = document.querySelector(selector);
@@ -64,7 +64,7 @@ function CommentDialog({ editor, pageId }: CommentDialogProps) {
       });
     } finally {
       setShowCommentPopup(false);
-      setDraftCommentId(null);
+      setDraftCommentId('');
     }
   };
 
@@ -89,7 +89,7 @@ function CommentDialog({ editor, pageId }: CommentDialogProps) {
         <CommentEditor onUpdate={handleCommentEditorChange} placeholder="Write a comment"
                        editable={true} autofocus={true}
         />
-        <CommentActions onSave={handleAddComment} isLoading={isLoading}
+        <CommentActions onSave={handleAddComment} isLoading={isPending}
         />
       </Stack>
     </Dialog>

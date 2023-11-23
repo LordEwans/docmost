@@ -1,96 +1,105 @@
-import { Divider, Paper, ScrollArea } from '@mantine/core';
+import React, { useState, useRef } from 'react';
+import { useParams } from 'react-router-dom';
+import { Divider, Paper } from '@mantine/core';
+import CommentListItem from '@/features/comment/components/comment-list-item';
+import { useCommentsQuery, useCreateCommentMutation } from '@/features/comment/queries/comment-query';
+
 import CommentEditor from '@/features/comment/components/comment-editor';
 import CommentActions from '@/features/comment/components/comment-actions';
-import React, { useState } from 'react';
-import CommentListItem from '@/features/comment/components/comment-list-item';
-import { IComment } from '@/features/comment/types/comment.types';
-import useComment from '@/features/comment/hooks/use-comment';
-import { useAtom } from 'jotai';
-import { commentsAtom } from '@/features/comment/atoms/comment-atom';
-import { useParams } from 'react-router-dom';
 import { useFocusWithin } from '@mantine/hooks';
 
-function CommentList({ comments }: IComment[]) {
-  const { createCommentMutation } = useComment();
-  const { isLoading } = createCommentMutation;
+function CommentList() {
   const { pageId } = useParams();
-  const [, setCommentsAtom] = useAtom(commentsAtom(pageId));
+  const { data: comments, isLoading: isCommentsLoading, isError } = useCommentsQuery(pageId);
+  const [isLoading, setIsLoading] = useState(false);
+  const createCommentMutation = useCreateCommentMutation();
 
-  const getChildComments = (parentId) => {
-    return comments.filter(comment => comment.parentCommentId === parentId);
-  };
+  if (isCommentsLoading) {
+    return <></>;
+  }
 
-  const renderChildComments = (parentId) => {
-    const children = getChildComments(parentId);
-    return (
-      <div>
-        {children.map(childComment => (
-          <div key={childComment.id}>
-            <CommentListItem comment={childComment} />
-            {renderChildComments(childComment.id)}
-          </div>
-        ))}
-      </div>
-    );
-  };
+  if (isError) {
+    return <div>Error loading comments.</div>;
+  }
 
-  const CommentEditorWithActions = ({ commentId, onSave, isLoading }) => {
-    const [content, setContent] = useState('');
-    const { ref, focused } = useFocusWithin();
-
-    const handleSave = () => {
-      onSave(commentId, content);
-      setContent('');
-    };
-
-    return (
-      <div ref={ref}>
-        <CommentEditor onUpdate={setContent} editable={true} />
-
-        {focused && <CommentActions onSave={handleSave} isLoading={isLoading} />}
-      </div>
-    );
-  };
+  if (!comments || comments.length === 0) {
+    return <>No comments yet.</>;
+  }
 
   const renderComments = (comment) => {
     const handleAddReply = async (commentId, content) => {
-      const commentData = {
-        pageId: comment.pageId,
-        parentCommentId: comment.id,
-        content: JSON.stringify(content),
-      };
+      try {
+        setIsLoading(true);
+        const commentData = {
+          pageId: comment.pageId,
+          parentCommentId: comment.id,
+          content: JSON.stringify(content),
+        };
 
-      const createdComment = await createCommentMutation.mutateAsync(commentData);
-      setCommentsAtom(prevComments => [...prevComments, createdComment]);
+        await createCommentMutation.mutateAsync(commentData);
+      } catch (error) {
+        console.error('Failed to post comment:', error);
+      } finally {
+        setIsLoading(false);
+      }
     };
 
     return (
-      <Paper shadow="sm" radius="md" p="sm" mb="sm" withBorder
-             key={comment.id} data-comment-id={comment.id}
-      >
+      <Paper shadow="sm" radius="md" p="sm" mb="sm" withBorder key={comment.id} data-comment-id={comment.id}>
         <div>
           <CommentListItem comment={comment} />
-          {renderChildComments(comment.id)}
+          <ChildComments comments={comments} parentId={comment.id} />
         </div>
 
         <Divider my={4} />
 
-        <CommentEditorWithActions onSave={handleAddReply} isLoading={isLoading} />
-
+        <CommentEditorWithActions commentId={comment.id} onSave={handleAddReply} isLoading={isLoading} />
       </Paper>
     );
   };
 
   return (
-    <ScrollArea style={{ height: '85vh' }} scrollbarSize={4} type="scroll">
-      <div style={{ paddingBottom: '200px' }}>
-        {comments
-          .filter(comment => comment.parentCommentId === null)
-          .map(comment => renderComments(comment))
-        }
-      </div>
-    </ScrollArea>
+    <>
+      {comments.filter(comment => comment.parentCommentId === null).map(renderComments)}
+    </>
   );
 }
+
+const ChildComments = ({ comments, parentId }) => {
+  const getChildComments = (parentId) => {
+    return comments.filter(comment => comment.parentCommentId === parentId);
+  };
+
+  return (
+    <div>
+      {getChildComments(parentId).map(childComment => (
+        <div key={childComment.id}>
+          <CommentListItem comment={childComment} />
+          <ChildComments comments={comments} parentId={childComment.id} />
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const CommentEditorWithActions = ({ commentId, onSave, isLoading }) => {
+  const [content, setContent] = useState('');
+  const { ref, focused } = useFocusWithin();
+  const commentEditorRef = useRef(null);
+
+  const handleSave = () => {
+    onSave(commentId, content);
+    setContent('');
+    commentEditorRef.current?.clearContent();
+  };
+
+  return (
+    <div ref={ref}>
+      <CommentEditor ref={commentEditorRef} onUpdate={setContent} editable={true} />
+      {focused && <CommentActions onSave={handleSave} isLoading={isLoading} />}
+    </div>
+  );
+};
+
 
 export default CommentList;

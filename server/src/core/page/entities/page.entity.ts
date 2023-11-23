@@ -12,6 +12,7 @@ import {
 import { User } from '../../user/entities/user.entity';
 import { Workspace } from '../../workspace/entities/workspace.entity';
 import { Comment } from '../../comment/entities/comment.entity';
+import { PageHistory } from './page-history.entity';
 
 @Entity('pages')
 export class Page {
@@ -55,6 +56,20 @@ export class Page {
   @JoinColumn({ name: 'creatorId' })
   creator: User;
 
+  @Column({ type: 'uuid', nullable: true })
+  lastUpdatedById: string;
+
+  @ManyToOne(() => User)
+  @JoinColumn({ name: 'lastUpdatedById' })
+  lastUpdatedBy: User;
+
+  @Column({ type: 'uuid', nullable: true })
+  deletedById: string;
+
+  @ManyToOne(() => User)
+  @JoinColumn({ name: 'deletedById' })
+  deletedBy: User;
+
   @Column()
   workspaceId: string;
 
@@ -86,6 +101,9 @@ export class Page {
 
   @OneToMany(() => Page, (page) => page.parentPage, { onDelete: 'CASCADE' })
   childPages: Page[];
+
+  @OneToMany(() => PageHistory, (pageHistory) => pageHistory.page)
+  pageHistory: PageHistory[];
 
   @OneToMany(() => Comment, (comment) => comment.page)
   comments: Comment[];
